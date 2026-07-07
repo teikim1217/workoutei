@@ -14,7 +14,9 @@ import {
 import type { ExerciseGroup, ExerciseRecord, SetRecord } from "@/lib/types";
 import Button from "@/components/Button";
 import CelebrationPopup from "@/components/CelebrationPopup";
+import VoiceSetButton from "@/components/VoiceSetButton";
 import { playFanfare } from "@/lib/fanfare";
+import type { ParsedSet } from "@/lib/parseSets";
 
 // 세트 입력용 (숫자 입력 중 빈 값 허용 위해 문자열로 보관)
 interface SetInput {
@@ -148,6 +150,19 @@ export default function WorkoutRecorder({
 
   function removeSetRow(i: number) {
     setSets((prev) => prev.filter((_, idx) => idx !== i));
+  }
+
+  // 음성 인식 결과(중량/횟수 쌍)를 세트로 채운다.
+  // 이미 입력된(채워진) 세트는 유지하고 그 뒤에 이어붙여, 빈 기본행은 대체된다.
+  // → "한 세트씩" 반복해도, "여러 세트 한 번에" 말해도 모두 자연스럽게 누적됨.
+  function handleVoiceSets(pairs: ParsedSet[]) {
+    if (pairs.length === 0) return;
+    setSets((prev) => {
+      const filled = prev.filter(
+        (s) => s.weight.trim() !== "" || s.reps.trim() !== "",
+      );
+      return [...filled, ...pairs];
+    });
   }
 
   // 유효 세트(중량·횟수 모두 입력)가 하나라도 있어야 저장 가능
@@ -359,6 +374,9 @@ export default function WorkoutRecorder({
               ✕
             </button>
           </div>
+
+          {/* 음성으로 중량/횟수 자동 입력 */}
+          <VoiceSetButton onResult={handleVoiceSets} />
 
           {/* 세트 행들 */}
           <div className="flex max-h-52 flex-col gap-2 overflow-y-auto">
