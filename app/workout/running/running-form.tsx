@@ -5,7 +5,13 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import WheelPicker from "@/components/WheelPicker";
 import Button from "@/components/Button";
-import { saveSession } from "@/lib/storage";
+import CelebrationPopup from "@/components/CelebrationPopup";
+import {
+  saveSession,
+  getSessionByDate,
+  isSessionComplete,
+} from "@/lib/storage";
+import { playFanfare } from "@/lib/fanfare";
 import { formatPace } from "@/lib/pace";
 
 // 로컬 자정 기준 "YYYY-MM-DD"
@@ -38,16 +44,28 @@ export default function RunningForm({ initialDate }: { initialDate?: string }) {
   const distanceKm = useMemo(() => (whole * 10 + dec) / 10, [whole, dec]);
   const pace = formatPace(distanceKm, minutes);
   const canSave = distanceKm > 0 && minutes > 0;
+  // 저장으로 그날 운동이 완료됐을 때 축하 팝업
+  const [celebrate, setCelebrate] = useState(false);
+
+  // 같은 날짜로 상체/하체도 이어 기록할 수 있게 날짜를 유지한 채 선택 화면으로
+  const nextHref = `/start?date=${date}`;
 
   function handleSave() {
     if (!canSave) return;
+    const wasComplete = isSessionComplete(getSessionByDate(date));
     saveSession({
       date,
       running: { distanceKm, durationMin: minutes, type },
       exercises: [],
     });
-    // 같은 날짜로 상체/하체도 이어 기록할 수 있게 날짜를 유지한 채 선택 화면으로
-    router.push(`/start?date=${date}`);
+    const becameComplete =
+      !wasComplete && isSessionComplete(getSessionByDate(date));
+    if (becameComplete) {
+      playFanfare();
+      setCelebrate(true); // 팝업이 닫히면 이동
+    } else {
+      router.push(nextHref);
+    }
   }
 
   return (
@@ -141,6 +159,11 @@ export default function RunningForm({ initialDate }: { initialDate?: string }) {
           저장
         </Button>
       </div>
+
+      {/* 러닝+상체+하체 모두 완료 시 축하 팝업 (3초 뒤 자동 사라짐) */}
+      {celebrate && (
+        <CelebrationPopup onDone={() => router.push(nextHref)} />
+      )}
     </main>
   );
 }

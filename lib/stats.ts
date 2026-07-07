@@ -1,7 +1,41 @@
 // 통계 계산용 순수 함수 (localStorage 접근 없음 — 세션 배열을 받아 계산)
 // 저장/조회는 storage.ts, 파생 계산은 여기로 분리.
 
-import type { SetRecord, WorkoutSession } from "./types";
+import type {
+  ExerciseRecord,
+  RunningRecord,
+  SetRecord,
+  WorkoutSession,
+} from "./types";
+
+// 요약 표시용: 러닝/종목을 한 목록으로 묶은 항목 (종류 구분)
+export type SessionItem =
+  | { kind: "running"; running: RunningRecord }
+  | { kind: "exercise"; exercise: ExerciseRecord };
+
+// 세션의 러닝·종목을 "저장한 순서"대로 반환.
+// savedAt(저장 시각)이 있으면 그 순서, 없으면(과거 데이터) 러닝 먼저 + 종목 배열 순서 유지.
+export function orderedItems(session: WorkoutSession): SessionItem[] {
+  const rows: { item: SessionItem; savedAt: number; tie: number }[] = [];
+  let tie = 0;
+  if (session.running) {
+    rows.push({
+      item: { kind: "running", running: session.running },
+      savedAt: session.running.savedAt ?? 0,
+      tie: tie++,
+    });
+  }
+  for (const ex of session.exercises) {
+    rows.push({
+      item: { kind: "exercise", exercise: ex },
+      savedAt: ex.savedAt ?? 0,
+      tie: tie++,
+    });
+  }
+  // savedAt 오름차순, 동률(과거 데이터 등)이면 원래 순서(tie) 유지
+  rows.sort((a, b) => a.savedAt - b.savedAt || a.tie - b.tie);
+  return rows.map((r) => r.item);
+}
 
 // "최대" 세트: 중량 최대, 동률이면 횟수 많은 쪽 (PRD 요약 규칙)
 export function maxSet(sets: SetRecord[]): SetRecord {

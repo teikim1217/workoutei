@@ -6,11 +6,15 @@ import { useEffect, useState } from "react";
 import {
   getExerciseGroups,
   getLastExerciseRecord,
-  saveSession,
+  getSessionByDate,
+  isSessionComplete,
+  saveExerciseRecord,
   setExerciseGroups,
 } from "@/lib/storage";
 import type { ExerciseGroup, ExerciseRecord, SetRecord } from "@/lib/types";
 import Button from "@/components/Button";
+import CelebrationPopup from "@/components/CelebrationPopup";
+import { playFanfare } from "@/lib/fanfare";
 
 // 세트 입력용 (숫자 입력 중 빈 값 허용 위해 문자열로 보관)
 interface SetInput {
@@ -64,14 +68,26 @@ export default function WorkoutRecorder({
   // 설정 모달: 그룹별 새 종목 입력값
   const [newInputs, setNewInputs] = useState<Record<string, string>>({});
 
-  // 세트 입력 + 오늘 임시 기록 (아직 localStorage 저장 안 함)
+  // 세트 입력 + 오늘 기록 (종목 저장 즉시 localStorage에도 반영됨)
   const [sets, setSets] = useState<SetInput[]>([]);
   const [todayRecords, setTodayRecords] = useState<ExerciseRecord[]>([]);
+  // 완료 축하 팝업 + 팝업이 닫힌 뒤 이동할 경로(null이면 그대로 머무름)
+  const [celebrate, setCelebrate] = useState(false);
+  const [navAfter, setNavAfter] = useState<string | null>(null);
 
   // 저장된 종목 목록 로드 (없으면 기본값 유지)
   useEffect(() => {
     setGroups(getExerciseGroups(category, defaultGroups));
   }, [category, defaultGroups]);
+
+  // 이 날짜에 이미 저장된 이 카테고리 종목을 불러와 이어서 기록.
+  // (운동 추가/시작으로 다시 들어와도 오늘 기록이 사라진 것처럼 보이지 않도록)
+  useEffect(() => {
+    const session = getSessionByDate(targetDate);
+    setTodayRecords(
+      session ? session.exercises.filter((e) => e.category === category) : [],
+    );
+  }, [category, targetDate]);
 
   // 그룹 변경을 상태 + localStorage 양쪽에 반영
   function commitGroups(next: ExerciseGroup[]) {
@@ -139,18 +155,21 @@ export default function WorkoutRecorder({
     (s) => s.weight.trim() !== "" && s.reps.trim() !== "",
   );
 
-  // 현재 종목+세트를 오늘 임시 목록에 upsert 후 입력 초기화
-  function saveExercise() {
-    if (!selected || !canSaveExercise) return;
-    const validSets: SetRecord[] = sets
+  // 현재 입력에서 유효한 세트만 추린다
+  function buildValidSets(): SetRecord[] {
+    return sets
       .filter((s) => s.weight.trim() !== "" && s.reps.trim() !== "")
       .map((s) => ({ weightKg: Number(s.weight), reps: Number(s.reps) }))
       .filter((s) => !Number.isNaN(s.weightKg) && !Number.isNaN(s.reps));
-    if (validSets.length === 0) return;
+  }
 
-    const record: ExerciseRecord = { name: selected, category, sets: validSets };
+  // 종목 하나를 localStorage에 즉시 저장하고, 오늘 기록 목록도 upsert.
+  // 이번 저장으로 그날 운동이 "완료(러닝+상체+하체)"가 됐으면 true 반환.
+  function persistExercise(record: ExerciseRecord): boolean {
+    const wasComplete = isSessionComplete(getSessionByDate(targetDate));
+    saveExerciseRecord(targetDate, record); // ← 운동 종료를 안 눌러도 저장됨
     setTodayRecords((prev) => {
-      const idx = prev.findIndex((r) => r.name === selected);
+      const idx = prev.findIndex((r) => r.name === record.name);
       if (idx >= 0) {
         const copy = [...prev];
         copy[idx] = record; // 같은 종목이면 교체
@@ -158,8 +177,31 @@ export default function WorkoutRecorder({
       }
       return [...prev, record];
     });
+    return !wasComplete && isSessionComplete(getSessionByDate(targetDate));
+  }
+
+  // 완료됐으면 팡파레 + 축하 팝업, 아니면 곧장 이동(nav가 있을 때).
+  function celebrateOrGo(becameComplete: boolean, nav: string | null) {
+    if (becameComplete) {
+      playFanfare();
+      setNavAfter(nav);
+      setCelebrate(true);
+    } else if (nav) {
+      router.push(nav);
+    }
+  }
+
+  // "종목 저장": 현재 종목을 즉시 저장(페이지에 그대로 머무름)
+  function saveExercise() {
+    if (!selected || !canSaveExercise) return;
+    const validSets = buildValidSets();
+    if (validSets.length === 0) return;
+
+    const record: ExerciseRecord = { name: selected, category, sets: validSets };
+    const becameComplete = persistExercise(record);
     setSelected(null);
     setSets([]);
+    celebrateOrGo(becameComplete, null);
   }
 
   function closeSetInput() {
@@ -167,16 +209,23 @@ export default function WorkoutRecorder({
     setSets([]);
   }
 
-  // 운동 종료: 임시 목록 전체를 오늘 날짜로 저장 후 홈 이동
+  // "운동 종료": 입력 중이던 유효 세트가 있으면 마저 저장하고 홈으로.
+  // (종목들은 이미 저장돼 있으므로 여기서 다시 저장할 필요는 없음)
   function finishWorkout() {
-    if (todayRecords.length === 0) return;
-    // 입력 중이고 아직 "종목 저장" 안 한 유효 세트가 있으면 확인
+    let becameComplete = false;
     if (selected && canSaveExercise) {
-      const ok = window.confirm("저장하지 않은 세트가 있습니다. 종료할까요?");
-      if (!ok) return;
+      const validSets = buildValidSets();
+      if (validSets.length > 0) {
+        becameComplete = persistExercise({
+          name: selected,
+          category,
+          sets: validSets,
+        });
+        setSelected(null);
+        setSets([]);
+      }
     }
-    saveSession({ date: targetDate, exercises: todayRecords });
-    router.push("/");
+    celebrateOrGo(becameComplete, "/");
   }
 
   // 선택 종목의 최근 기록 (클라이언트에서만 localStorage 조회)
@@ -285,7 +334,7 @@ export default function WorkoutRecorder({
       <Button
         variant="solid"
         onClick={finishWorkout}
-        disabled={todayRecords.length === 0}
+        disabled={todayRecords.length === 0 && !canSaveExercise}
         className="mt-8"
       >
         운동 종료
@@ -441,6 +490,16 @@ export default function WorkoutRecorder({
             ))}
           </div>
         </div>
+      )}
+
+      {/* 러닝+상체+하체 모두 완료 시 축하 팝업 (3초 뒤 자동 사라짐) */}
+      {celebrate && (
+        <CelebrationPopup
+          onDone={() => {
+            setCelebrate(false);
+            if (navAfter) router.push(navAfter);
+          }}
+        />
       )}
     </main>
   );

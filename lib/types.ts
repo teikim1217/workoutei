@@ -9,12 +9,14 @@ export interface ExerciseRecord {
   name: string;                    // 예: "Lat pull down"
   category: "upper" | "lower";
   sets: SetRecord[];               // 입력 순서 유지
+  savedAt?: number;                // 저장 시각(ms). 요약을 저장 순서대로 정렬하는 데 사용
 }
 
 export interface RunningRecord {
   distanceKm: number;
   durationMin: number;
   type: "indoor" | "outdoor";
+  savedAt?: number;                // 저장 시각(ms). 요약을 저장 순서대로 정렬하는 데 사용
 }
 
 export interface WorkoutSession {

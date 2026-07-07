@@ -9,6 +9,7 @@ import {
 } from "@/lib/storage";
 import type { SetRecord } from "@/lib/types";
 import { formatPace } from "@/lib/pace";
+import { orderedItems } from "@/lib/stats";
 import DayBadge from "@/components/DayBadge";
 import IgnitionStartButton from "@/components/IgnitionStartButton";
 
@@ -257,10 +258,6 @@ export default function Home() {
         (() => {
           const session = getSessionByDate(selectedDate);
           const d = parseDate(selectedDate);
-          const running = session?.running;
-          const pace = running
-            ? formatPace(running.distanceKm, running.durationMin)
-            : null;
           return (
             <section className="mt-4 border border-hairline bg-surface-card p-6">
               <p className="text-lg font-bold text-on-dark">
@@ -273,29 +270,38 @@ export default function Home() {
                 </p>
               )}
 
-              {running && (
-                <p className="mt-4 text-sm font-light text-body">
-                  러닝 {running.distanceKm}km ({running.durationMin}min)
-                  {pace ? ` · 페이스 ${pace}/km` : ""}
-                </p>
-              )}
-
-              {session?.exercises.map((ex, i) => {
-                if (ex.sets.length === 0) return null;
-                const start = ex.sets[0];
-                const mx = maxSet(ex.sets);
-                return (
-                  <div key={i} className="mt-4">
-                    <p className="text-sm font-bold uppercase tracking-[0.1em] text-on-dark">
-                      {ex.name}
-                    </p>
-                    <p className="mt-1 text-sm font-light text-body">
-                      {ex.sets.length} sets · 시작 {start.weightKg}kg{" "}
-                      {start.reps}회 · 최대 {mx.weightKg}kg {mx.reps}회
-                    </p>
-                  </div>
-                );
-              })}
+              {/* 러닝·종목을 저장한 순서대로 표시 */}
+              {session &&
+                orderedItems(session).map((it, i) => {
+                  if (it.kind === "running") {
+                    const r = it.running;
+                    const p = formatPace(r.distanceKm, r.durationMin);
+                    return (
+                      <p
+                        key={`r-${i}`}
+                        className="mt-4 text-sm font-light text-body"
+                      >
+                        러닝 {r.distanceKm}km ({r.durationMin}min)
+                        {p ? ` · 페이스 ${p}/km` : ""}
+                      </p>
+                    );
+                  }
+                  const ex = it.exercise;
+                  if (ex.sets.length === 0) return null;
+                  const start = ex.sets[0];
+                  const mx = maxSet(ex.sets);
+                  return (
+                    <div key={`e-${i}`} className="mt-4">
+                      <p className="text-sm font-bold uppercase tracking-[0.1em] text-on-dark">
+                        {ex.name}
+                      </p>
+                      <p className="mt-1 text-sm font-light text-body">
+                        {ex.sets.length} sets · 시작 {start.weightKg}kg{" "}
+                        {start.reps}회 · 최대 {mx.weightKg}kg {mx.reps}회
+                      </p>
+                    </div>
+                  );
+                })}
 
               {/* 액션: 수정(기록 있을 때) + 운동 추가(항상, 선택 날짜로 저장) */}
               <div className="mt-6 flex flex-wrap gap-2">

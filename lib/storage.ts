@@ -55,17 +55,75 @@ export function getSessionByDate(date: string): WorkoutSession | undefined {
   return getSessions().find((s) => s.date === date);
 }
 
+// 러닝 + 상체 + 하체를 모두 포함하면 그날 운동을 "완료"로 본다.
+export function isSessionComplete(
+  session?: WorkoutSession | null,
+): boolean {
+  if (!session) return false;
+  const hasUpper = session.exercises.some((e) => e.category === "upper");
+  const hasLower = session.exercises.some((e) => e.category === "lower");
+  return !!session.running && hasUpper && hasLower;
+}
+
+// 종목 하나를 그 날짜 세션에 즉시 저장(upsert).
+// 같은 이름 종목이 있으면 교체, 없으면 추가. 세션이 없으면 새로 만든다.
+// "운동 종료"를 누르지 않아도 종목 저장 시점에 영구 저장되게 하려는 목적.
+// (러닝/다른 종목은 건드리지 않아, 한 번 저장한 기록이 그대로 연동된다.)
+export function saveExerciseRecord(date: string, record: ExerciseRecord): void {
+  if (!isBrowser()) return;
+  const sessions = getSessions();
+  const existing = sessions.find((s) => s.date === date);
+  if (existing) {
+    const idx = existing.exercises.findIndex((e) => e.name === record.name);
+    if (idx >= 0) {
+      // 재저장(수정)이면 원래 저장 순서를 유지하도록 savedAt을 보존
+      existing.exercises[idx] = {
+        ...record,
+        savedAt: existing.exercises[idx].savedAt ?? Date.now(),
+      };
+    } else {
+      existing.exercises.push({ ...record, savedAt: Date.now() });
+    }
+  } else {
+    sessions.push({
+      id: genId(),
+      date,
+      exercises: [{ ...record, savedAt: Date.now() }],
+    });
+  }
+  localStorage.setItem(KEY, JSON.stringify(sessions));
+}
+
 // 세션 저장 (같은 날짜가 있으면 병합: 러닝은 덮어쓰기, 운동은 추가)
 export function saveSession(input: Omit<WorkoutSession, "id">): void {
   if (!isBrowser()) return;
   const sessions = getSessions();
   const existing = sessions.find((s) => s.date === input.date);
+  const now = Date.now();
+  // 들어온 종목에 저장 시각 부여 (저장 순서 정렬용)
+  const incomingExercises = input.exercises.map((e) => ({
+    ...e,
+    savedAt: e.savedAt ?? now,
+  }));
 
   if (existing) {
-    if (input.running) existing.running = input.running;
-    existing.exercises = [...existing.exercises, ...input.exercises];
+    if (input.running) {
+      // 같은 날 러닝 재저장 시엔 원래 저장 순서를 유지하도록 savedAt 보존
+      existing.running = {
+        ...input.running,
+        savedAt: existing.running?.savedAt ?? input.running.savedAt ?? now,
+      };
+    }
+    existing.exercises = [...existing.exercises, ...incomingExercises];
   } else {
-    sessions.push({ id: genId(), ...input });
+    sessions.push({
+      id: genId(),
+      date: input.date,
+      running: input.running
+        ? { ...input.running, savedAt: input.running.savedAt ?? now }
+        : undefined,
+      exercises: incomingExercises,
+    });
   }
   localStorage.setItem(KEY, JSON.stringify(sessions));
 }
@@ -86,11 +144,17 @@ export function updateSession(
     // 러닝도 운동도 없으면 빈 세션을 남기지 않고 제거
     sessions.splice(idx, 1);
   } else {
-    sessions[idx] = {
-      ...sessions[idx],
-      running: data.running,
-      exercises: data.exercises,
-    };
+    const prior = sessions[idx];
+    const now = Date.now();
+    // 수정 후에도 저장 순서를 유지: 러닝은 기존 savedAt, 종목은 이름으로 매칭해 기존 savedAt 보존
+    const running = data.running
+      ? { ...data.running, savedAt: prior.running?.savedAt ?? now }
+      : undefined;
+    const exercises = data.exercises.map((e) => {
+      const old = prior.exercises.find((o) => o.name === e.name);
+      return { ...e, savedAt: e.savedAt ?? old?.savedAt ?? now };
+    });
+    sessions[idx] = { ...prior, running, exercises };
   }
   localStorage.setItem(KEY, JSON.stringify(sessions));
 }

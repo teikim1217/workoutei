@@ -138,6 +138,53 @@ textarea,
   }
 }
 
+/* 축하 팝업: 색종이 낙하 + 메시지 팝인 */
+.celebrate-confetti {
+  position: absolute;
+  top: -12%;
+  border-radius: 0; /* 디자인 규칙: radius 0 유지 */
+  animation-name: celebrate-fall;
+  animation-timing-function: linear;
+  animation-iteration-count: 1;
+  animation-fill-mode: forwards;
+  will-change: transform;
+}
+@keyframes celebrate-fall {
+  0% {
+    transform: translateY(0) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(115vh) rotate(720deg);
+    opacity: 1;
+  }
+}
+.celebrate-pop {
+  animation: celebrate-pop-in 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes celebrate-pop-in {
+  0% {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.08);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .celebrate-confetti {
+    display: none;
+  }
+  .celebrate-pop {
+    animation: none;
+  }
+}
+
 /* 휠 피커용 스크롤바 숨김 */
 .no-scrollbar {
   -ms-overflow-style: none;

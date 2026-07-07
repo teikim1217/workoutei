@@ -4,7 +4,12 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { getSessions } from "@/lib/storage";
 import { formatPace } from "@/lib/pace";
-import { maxSet, getExerciseNames, getExerciseMaxSeries } from "@/lib/stats";
+import {
+  maxSet,
+  getExerciseNames,
+  getExerciseMaxSeries,
+  orderedItems,
+} from "@/lib/stats";
 import type { WorkoutSession } from "@/lib/types";
 
 // "YYYY-MM-DD" → "M월 D일"
@@ -153,39 +158,46 @@ export default function StatsPage() {
           <section className="mt-8">
             <h2 className="mb-2 text-sm tracking-wide text-muted">기록</h2>
             <div className="flex flex-col gap-3">
-              {historyDesc.map((s) => {
-                const pace = s.running
-                  ? formatPace(s.running.distanceKm, s.running.durationMin)
-                  : null;
-                return (
-                  <div
-                    key={s.id}
-                    className="border border-hairline bg-surface-card p-4"
-                  >
-                    <p className="font-bold text-on-dark">
-                      {toKoreanDate(s.date)}
-                    </p>
-                    {s.running && (
-                      <p className="mt-1 text-sm font-light text-body">
-                        러닝 {s.running.distanceKm}km · {s.running.durationMin}분
-                        {pace ? ` · ${pace}/km` : ""} ·{" "}
-                        {s.running.type === "indoor" ? "실내" : "실외"}
-                      </p>
-                    )}
-                    {s.exercises.map((e, i) => {
-                      if (e.sets.length === 0) return null;
-                      const start = e.sets[0];
-                      const mx = maxSet(e.sets);
+              {historyDesc.map((s) => (
+                <div
+                  key={s.id}
+                  className="border border-hairline bg-surface-card p-4"
+                >
+                  <p className="font-bold text-on-dark">
+                    {toKoreanDate(s.date)}
+                  </p>
+                  {/* 러닝·종목을 저장한 순서대로 표시 */}
+                  {orderedItems(s).map((it, i) => {
+                    if (it.kind === "running") {
+                      const r = it.running;
+                      const pace = formatPace(r.distanceKm, r.durationMin);
                       return (
-                        <p key={i} className="mt-1 text-sm font-light text-body">
-                          {e.name} · {e.sets.length}세트 · 시작 {start.weightKg}
-                          kg×{start.reps} / 최대 {mx.weightKg}kg×{mx.reps}
+                        <p
+                          key={`r-${i}`}
+                          className="mt-1 text-sm font-light text-body"
+                        >
+                          러닝 {r.distanceKm}km · {r.durationMin}분
+                          {pace ? ` · ${pace}/km` : ""} ·{" "}
+                          {r.type === "indoor" ? "실내" : "실외"}
                         </p>
                       );
-                    })}
-                  </div>
-                );
-              })}
+                    }
+                    const e = it.exercise;
+                    if (e.sets.length === 0) return null;
+                    const start = e.sets[0];
+                    const mx = maxSet(e.sets);
+                    return (
+                      <p
+                        key={`e-${i}`}
+                        className="mt-1 text-sm font-light text-body"
+                      >
+                        {e.name} · {e.sets.length}세트 · 시작 {start.weightKg}
+                        kg×{start.reps} / 최대 {mx.weightKg}kg×{mx.reps}
+                      </p>
+                    );
+                  })}
+                </div>
+              ))}
             </div>
           </section>
         </>
